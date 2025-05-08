@@ -105,7 +105,7 @@ bool InitD3D12(HWND inHWND, int inWidth, int inHeight)
     }
     // ---------------------创建swapchain----------------------
     DXGI_SWAP_CHAIN_DESC swapChainDesc{};
-    swapChainDesc.BufferCount = 3;
+    swapChainDesc.BufferCount = 2;
     swapChainDesc.BufferDesc = {};
     swapChainDesc.BufferDesc.Width = inWidth;
     swapChainDesc.BufferDesc.Height = inHeight;
@@ -196,7 +196,7 @@ void WaitForCompletionOfCommandList()
     if (gFence->GetCompletedValue() < gFenceValue)
     {
         gFence->SetEventOnCompletion(gFenceValue, gFenceEvent);
-        WaitForSingleObject(gFenceEvent,INFINITE);
+        WaitForSingleObject(gFenceEvent, INFINITE);
     }
     gCurrentRTIndex = gSwapChain->GetCurrentBackBufferIndex();
 }
@@ -218,7 +218,7 @@ void BeginRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList)
     D3D12_CPU_DESCRIPTOR_HANDLE colorRT, dsv;
     colorRT.ptr = gSwapChainRTVHeap->GetCPUDescriptorHandleForHeapStart().ptr + gCurrentRTIndex * gRTVDescriptorSize;
     dsv.ptr = gSwapChainDSVHeap->GetCPUDescriptorHandleForHeapStart().ptr;
-    inCommandList->OMSetRenderTargets(1, &colorRT,FALSE, & q);
+    inCommandList->OMSetRenderTargets(1, &colorRT,FALSE, &dsv);
     D3D12_VIEWPORT viewport = {0.f, 0.f, 1280.f, 720.f};
     D3D12_RECT scissorRect = {0, 0, 1280, 720};
     inCommandList->RSSetViewports(1, &viewport);
