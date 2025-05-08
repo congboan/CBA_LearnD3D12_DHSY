@@ -28,6 +28,81 @@ ID3D12Fence* gFence = nullptr;
 HANDLE gFenceEvent = nullptr;
 UINT64 gFenceValue = 0;
 
+ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
+                               D3D12_SHADER_BYTECODE inVertexShader,
+                               D3D12_SHADER_BYTECODE inPixelShader)
+{
+    D3D12_INPUT_ELEMENT_DESC vertexDataElementDesc[] =
+    {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {
+            "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+            D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+        },
+        {
+            "NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+            D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+        }
+    };
+    D3D12_INPUT_LAYOUT_DESC vertexDataLayoutDesc{};
+    vertexDataLayoutDesc.NumElements = _countof(vertexDataElementDesc);
+    vertexDataLayoutDesc.pInputElementDescs = vertexDataElementDesc;
+
+    D3D12_RENDER_TARGET_BLEND_DESC rtBlendDesc{};
+    rtBlendDesc.BlendEnable = FALSE;
+    rtBlendDesc.LogicOpEnable = FALSE;
+    rtBlendDesc.SrcBlend = D3D12_BLEND_ONE;
+    rtBlendDesc.DestBlend = D3D12_BLEND_ZERO;
+    rtBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+    rtBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+    rtBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+    rtBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    rtBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
+    rtBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = inD3D12RootSignature;
+    psoDesc.InputLayout = vertexDataLayoutDesc;
+    psoDesc.VS = inVertexShader;
+    psoDesc.PS = inPixelShader;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    psoDesc.SampleDesc.Count = 1;
+    psoDesc.SampleDesc.Quality = 0;
+    psoDesc.SampleMask = 0xffffffff;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID; //实心模式
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    psoDesc.RasterizerState.FrontCounterClockwise = false;
+    psoDesc.RasterizerState.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+    psoDesc.RasterizerState.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+    psoDesc.RasterizerState.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+    psoDesc.RasterizerState.DepthClipEnable = TRUE;
+    psoDesc.RasterizerState.MultisampleEnable = false;
+    psoDesc.RasterizerState.AntialiasedLineEnable = false;
+    psoDesc.RasterizerState.ForcedSampleCount = 0;
+    psoDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+    psoDesc.BlendState.AlphaToCoverageEnable = false;
+
+    psoDesc.DepthStencilState.DepthEnable = true;
+    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; //深度可写
+    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS; //绘制时可以让离眼睛更近的物体覆盖掉更远的
+    psoDesc.BlendState = {0};
+    for (int i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+    {
+        psoDesc.BlendState.RenderTarget[i] = rtBlendDesc;
+        psoDesc.NumRenderTargets = 1;
+        ID3D12PipelineState* d3d12PSO = nullptr;
+        HRESULT hReuslt = gD3D12Device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&d3d12PSO));
+        if (FAILED(hReuslt))
+        {
+            return nullptr;
+        }
+        return d3d12PSO;
+    }
+}
+
 D3D12_RESOURCE_BARRIER InitResourceBarrier(ID3D12Resource* inResource,
                                            D3D12_RESOURCE_STATES inPrevState,
                                            D3D12_RESOURCE_STATES inNextState
@@ -296,6 +371,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return -1;
     }
     InitD3D12(hwnd, viewportWidgth, viewportHeigth);
+
+    float vertexData[] = {
+        -0.5f, -0.5f, 0.5f, 1.0f, //position
+        1.0f, 0.0f, 0.0, 1.0f, //color
+        0.0f, 0.0f, 0.0f, 0.0f, //normal
+        0.0f, 0.5f, 0.5f, 1.0f, //position
+        0.0f, 1.0f, 0.0, 1.0f, //color
+        0.0f, 0.0f, 0.0f, 0.0f, //normal
+        0.5f, -0.5f, 0.5f, 1.0f, //position
+        0.0f, 0.0f, 1.0, 1.0f, //color
+        0.0f, 0.0f, 0.0f, 0.0f, //normal
+    };
+
     ShowWindow(hwnd, inCmdShow);
     UpdateWindow(hwnd);
 
