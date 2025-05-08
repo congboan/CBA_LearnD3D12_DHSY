@@ -13,10 +13,40 @@ LPCTSTR gWindowClassName = L"BattleFire";
 ID3D12Device* gD3D12Device = nullptr;
 ID3D12CommandQueue* gD3D12CommandQueue = nullptr;
 IDXGISwapChain3* gSwapChain = nullptr;
+ID3D12Resource* gColorRTs[2];
+ID3D12Resource* gDSRT = nullptr;
+int gCurrentRTIndex = 0;
+//RTV和DSV在d3d12中需要手动在GPU上创建内存 就是descriptheap
+ID3D12DescriptorHeap* gSwapChainRTVHeap = nullptr;
+ID3D12DescriptorHeap* gSwapChainDSVHeap = nullptr;
+
+UINT gRTVDescriptorSize = 0;
+UINT gDSVDescriptorSize = 0;
+ID3D12CommandAllocator* gCommandAllocator = nullptr;
+ID3D12GraphicsCommandList* gGraphicsCommandList = nullptr;
+ID3D12Fence* gFence = nullptr;
+HANDLE gFenceEvent = nullptr;
+UINT64 gFenceValue = 0;
+
+D3D12_RESOURCE_BARRIER InitResourceBarrier(ID3D12Resource* inResource,
+                                           D3D12_RESOURCE_STATES inPrevState,
+                                           D3D12_RESOURCE_STATES inNextState
+)
+{
+    D3D12_RESOURCE_BARRIER d3d12ResourceBarrier{};
+    memset(&d3d12ResourceBarrier, 0, sizeof(d3d12ResourceBarrier));
+    d3d12ResourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    d3d12ResourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    d3d12ResourceBarrier.Transition.pResource = inResource;
+    d3d12ResourceBarrier.Transition.StateBefore = inPrevState;
+    d3d12ResourceBarrier.Transition.StateAfter = inNextState;
+    d3d12ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    return d3d12ResourceBarrier;
+}
 
 bool InitD3D12(HWND inHWND, int inWidth, int inHeight)
 {
-    //dxgifactory->adapter->device->commandQueue->swapchain
+    //dxgifactory->adapter->device->commandQueue->swapchain->buffer->rtv->comandlist->fence
     HRESULT hResult;
     UINT dxgiFactoryFlags = 0;
 #ifdef _DEBUG
@@ -44,7 +74,7 @@ bool InitD3D12(HWND inHWND, int inWidth, int inHeight)
     {
         DXGI_ADAPTER_DESC1 desc;
         adapter->GetDesc1(&desc);
-        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+        if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) && (desc.DedicatedSystemMemory > 512 * 1024)) //判断显存大小永远判断是否为独立显卡
         {
             continue;
         }
@@ -89,9 +119,122 @@ bool InitD3D12(HWND inHWND, int inWidth, int inHeight)
     IDXGISwapChain* swapChain = nullptr;
     dxgiFactory->CreateSwapChain(gD3D12CommandQueue, &swapChainDesc, &swapChain);
     swapChain->QueryInterface(IID_PPV_ARGS(&gSwapChain));
+
+
+    // ---------------------创建buffer----------------------
+    D3D12_HEAP_PROPERTIES d3d12HeapProps{};
+    d3d12HeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+    //d3d12HeapProps.CreationNodeMask和d3d12HeapProps.VisibleNodeMask表示使用那个gpu（主要存在于多显卡交火的情况下）
+
+    D3D12_RESOURCE_DESC d3d12ResourceDesc{};
+    d3d12ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    d3d12ResourceDesc.Alignment = 0;
+    d3d12ResourceDesc.Width = inWidth;
+    d3d12ResourceDesc.Height = inHeight;
+    d3d12ResourceDesc.DepthOrArraySize = 1;
+    d3d12ResourceDesc.MipLevels = 0;
+    d3d12ResourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    d3d12ResourceDesc.SampleDesc.Count = 1;
+    d3d12ResourceDesc.SampleDesc.Quality = 0;
+    d3d12ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN; //创建出来之后需要干什么
+    d3d12ResourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE dsClearValue{};
+    dsClearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    dsClearValue.DepthStencil.Depth = 1.0f;
+    dsClearValue.DepthStencil.Stencil = 0;
+
+    //@param3 表示这个resource是可写入的depth
+    gD3D12Device->CreateCommittedResource(&d3d12HeapProps, D3D12_HEAP_FLAG_NONE, &d3d12ResourceDesc,
+                                          D3D12_RESOURCE_STATE_DEPTH_WRITE, &dsClearValue,IID_PPV_ARGS(&gDSRT));
+
+
+    // ---------------------创建rtv和dsv----------------------
+
+    D3D12_DESCRIPTOR_HEAP_DESC d3d12DescriptorHeapDescRTV = {};
+    d3d12DescriptorHeapDescRTV.NumDescriptors = 2;
+    d3d12DescriptorHeapDescRTV.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    gD3D12Device->CreateDescriptorHeap(&d3d12DescriptorHeapDescRTV,IID_PPV_ARGS(&gSwapChainRTVHeap)); //相当于alloc
+    gRTVDescriptorSize = gD3D12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+    D3D12_DESCRIPTOR_HEAP_DESC d3d12DescriptorHeapDescDSV = {};
+    d3d12DescriptorHeapDescDSV.NumDescriptors = 1;
+    d3d12DescriptorHeapDescDSV.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    gD3D12Device->CreateDescriptorHeap(&d3d12DescriptorHeapDescDSV,IID_PPV_ARGS(&gSwapChainDSVHeap));
+    gDSVDescriptorSize = gD3D12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHeapStart = gSwapChainRTVHeap->GetCPUDescriptorHandleForHeapStart();
+    for (int i = 0; i < 2; i++)
+    {
+        gSwapChain->GetBuffer(i,IID_PPV_ARGS(&gColorRTs[i]));
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvPointer;
+        rtvPointer.ptr = rtvHeapStart.ptr + i * gRTVDescriptorSize;
+        //此处rtv是系统创建的 所以不需要desc
+        gD3D12Device->CreateRenderTargetView(gColorRTs[i], nullptr, rtvPointer);
+    }
+    D3D12_DEPTH_STENCIL_VIEW_DESC d3d12DSViewDesc{};
+    d3d12DSViewDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    d3d12DSViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    gD3D12Device->CreateDepthStencilView(gDSRT, &d3d12DSViewDesc,
+                                         gSwapChainDSVHeap->GetCPUDescriptorHandleForHeapStart());
+    // ---------------------创建commandlist----------------------
+    //@param0 可以绘图和computeshader
+    gD3D12Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&gCommandAllocator));
+    gD3D12Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, gCommandAllocator, nullptr,
+                                    IID_PPV_ARGS(&gGraphicsCommandList));
+    // ---------------------创建fence----------------------
+    gD3D12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gFence));
+    gFenceEvent = CreateEvent(nullptr,FALSE,FALSE, nullptr);
+
+    gCurrentRTIndex = gSwapChain->GetCurrentBackBufferIndex();
+
     return true;
 }
 
+void WaitForCompletionOfCommandList()
+{
+    if (gFence->GetCompletedValue() < gFenceValue)
+    {
+        gFence->SetEventOnCompletion(gFenceValue, gFenceEvent);
+        WaitForSingleObject(gFenceEvent,INFINITE);
+    }
+    gCurrentRTIndex = gSwapChain->GetCurrentBackBufferIndex();
+}
+
+void EndCommandList()
+{
+    gGraphicsCommandList->Close();
+    ID3D12CommandList* ppCommandLists[] = {gGraphicsCommandList};
+    gD3D12CommandQueue->ExecuteCommandLists(1, ppCommandLists);
+    gFenceValue += 1;
+    gD3D12CommandQueue->Signal(gFence, gFenceValue);
+}
+
+void BeginRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList)
+{
+    D3D12_RESOURCE_BARRIER barrier = InitResourceBarrier(gColorRTs[gCurrentRTIndex], D3D12_RESOURCE_STATE_PRESENT,
+                                                         D3D12_RESOURCE_STATE_RENDER_TARGET);
+    inCommandList->ResourceBarrier(1, &barrier);
+    D3D12_CPU_DESCRIPTOR_HANDLE colorRT, dsv;
+    colorRT.ptr = gSwapChainRTVHeap->GetCPUDescriptorHandleForHeapStart().ptr + gCurrentRTIndex * gRTVDescriptorSize;
+    dsv.ptr = gSwapChainDSVHeap->GetCPUDescriptorHandleForHeapStart().ptr;
+    inCommandList->OMSetRenderTargets(1, &colorRT,FALSE, & q);
+    D3D12_VIEWPORT viewport = {0.f, 0.f, 1280.f, 720.f};
+    D3D12_RECT scissorRect = {0, 0, 1280, 720};
+    inCommandList->RSSetViewports(1, &viewport);
+    inCommandList->RSSetScissorRects(1, &scissorRect);
+    const float clearColor[] = {0.1f, 0.4f, 0.6f, 1.0f};
+    inCommandList->ClearRenderTargetView(colorRT, clearColor, 0, nullptr);
+    inCommandList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.f, 0.f, 0.f,
+                                         nullptr);
+}
+
+void EndRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList)
+{
+    D3D12_RESOURCE_BARRIER barrier = InitResourceBarrier(gColorRTs[gCurrentRTIndex], D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                                         D3D12_RESOURCE_STATE_PRESENT);
+    inCommandList->ResourceBarrier(1, &barrier);
+}
 
 //@param inWParam 里面会存储案件信息
 //@param inLParam createwindowex最后一个参数
@@ -176,6 +319,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
         else
         {
+            //render
+            WaitForCompletionOfCommandList();
+            gCommandAllocator->Reset();
+            gGraphicsCommandList->Reset(gCommandAllocator, nullptr);
+            BeginRenderToSwapChain(gGraphicsCommandList);
+            EndRenderToSwapChain(gGraphicsCommandList);
+            EndCommandList();
+
+            gSwapChain->Present(0, 0);
         }
     }
     return 0;
