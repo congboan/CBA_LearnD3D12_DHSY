@@ -127,8 +127,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BattleFireDirect.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Resource\Shader\ndctrangle.hlsl" />
+    <ClCompile Include="StaticMeshComponent.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="BattleFireDirect.h" />
+    <ClInclude Include="StaticMeshComponent.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

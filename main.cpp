@@ -1,13 +1,22 @@
 //
 // Created by 77361 on 25-5-7.
 //
+#include <cstdio>
 #include <windows.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
+#include <d3dcompiler.h>
+#include <stdio.h>
+#include <DirectXMath.h>
+#include "BattleFireDirect.h"
+
+#include "StaticMeshComponent.h"
 
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
+#pragma comment(lib,"d3dcompiler.lib")
 
+#define PI 3.14159265358979323846
 
 LPCTSTR gWindowClassName = L"BattleFire";
 ID3D12Device* gD3D12Device = nullptr;
@@ -28,6 +37,177 @@ ID3D12Fence* gFence = nullptr;
 HANDLE gFenceEvent = nullptr;
 UINT64 gFenceValue = 0;
 
+D3D12_RESOURCE_BARRIER InitResourceBarrier(ID3D12Resource* inResource,
+                                           D3D12_RESOURCE_STATES inPrevState,
+                                           D3D12_RESOURCE_STATES inNextState
+)
+{
+    D3D12_RESOURCE_BARRIER d3d12ResourceBarrier{};
+    memset(&d3d12ResourceBarrier, 0, sizeof(d3d12ResourceBarrier));
+    d3d12ResourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    d3d12ResourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    d3d12ResourceBarrier.Transition.pResource = inResource;
+    d3d12ResourceBarrier.Transition.StateBefore = inPrevState;
+    d3d12ResourceBarrier.Transition.StateAfter = inNextState;
+    d3d12ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    return d3d12ResourceBarrier;
+}
+
+ID3D12RootSignature* InitRootSignature()
+{
+    D3D12_ROOT_PARAMETER rootParameters[2]; //最多占64个DWORLD
+    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    rootParameters[0].Constants.RegisterSpace = 0; //有点类似于namespace 
+    rootParameters[0].Constants.ShaderRegister = 0; //对应shader中:register(b0)
+    rootParameters[0].Constants.Num32BitValues = 4;
+
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    rootParameters[1].Descriptor.RegisterSpace = 0; //descriptor占两个DWORLD
+    rootParameters[1].Descriptor.ShaderRegister = 1; //cbv
+
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.NumParameters = _countof(rootParameters);
+    rootSignatureDesc.pParameters = rootParameters;
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+
+    ID3DBlob* sigature;
+    HRESULT hResult = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sigature, nullptr);
+    ID3D12RootSignature* d3d12RootSignature = nullptr;
+    gD3D12Device->CreateRootSignature(0, sigature->GetBufferPointer(), sigature->GetBufferSize(),
+                                      IID_PPV_ARGS(&d3d12RootSignature));
+    return d3d12RootSignature;
+}
+
+void CreateShaderFromFile(
+    LPCTSTR inShaderFilePath,
+    const char* inMainFunctionName,
+    const char* inTarget, //vs  vs_5_1 ps  ps_5_1 版本
+    D3D12_SHADER_BYTECODE* inShader)
+{
+    ID3DBlob* shaderBuffer = nullptr; //编译后的shader文件
+    ID3DBlob* errorBuffer = nullptr; //编译后的shader文件
+    HRESULT hResult = D3DCompileFromFile(inShaderFilePath, nullptr, nullptr, inMainFunctionName, inTarget,
+                                         D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &shaderBuffer,
+                                         &errorBuffer);
+    if (FAILED(hResult))
+    {
+        printf("CreateShaderFormFile error:[%s][%s]:[%s]", inMainFunctionName, inTarget,
+               (char*)errorBuffer->GetBufferPointer());
+        errorBuffer->Release();
+        return;
+    }
+    inShader->pShaderBytecode = shaderBuffer->GetBufferPointer();
+    inShader->BytecodeLength = shaderBuffer->GetBufferSize();
+}
+
+ID3D12Resource* CreateBufferObject(ID3D12GraphicsCommandList* inCommandList, void* inData, int inDataLen,
+                                   D3D12_RESOURCE_STATES inFinalResourceState)
+{
+    D3D12_HEAP_PROPERTIES d3dHeapProperties{};
+    d3dHeapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_RESOURCE_DESC d3d12ResourceDesc{};
+    d3d12ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    d3d12ResourceDesc.Alignment = 0;
+    d3d12ResourceDesc.Width = inDataLen;
+    d3d12ResourceDesc.Height = 1;
+    d3d12ResourceDesc.DepthOrArraySize = 1;
+    d3d12ResourceDesc.MipLevels = 1;
+    d3d12ResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+    d3d12ResourceDesc.SampleDesc.Count = 1;
+    d3d12ResourceDesc.SampleDesc.Quality = 0;
+    d3d12ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR; //行为主
+    d3d12ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    ID3D12Resource* bufferObject = nullptr;
+    gD3D12Device->CreateCommittedResource(
+        &d3dHeapProperties,
+        D3D12_HEAP_FLAG_NONE,
+        &d3d12ResourceDesc,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        nullptr,
+        IID_PPV_ARGS(&bufferObject));
+    d3d12ResourceDesc = bufferObject->GetDesc();
+    UINT64 memorySizeUsed = 0;
+    UINT64 rowSizeInBytes = 0; //一行可以存储多少数据
+    UINT rowUsed = 0; //多少航
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT subResourceFootprint{}; //内存布局
+    gD3D12Device->GetCopyableFootprints(&d3d12ResourceDesc, 0, 1, 0,
+                                        &subResourceFootprint, &rowUsed, &rowSizeInBytes, &memorySizeUsed);
+
+    ID3D12Resource* tempBufferObject = nullptr;
+    d3dHeapProperties = {};
+    d3dHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+    gD3D12Device->CreateCommittedResource(
+        &d3dHeapProperties,
+        D3D12_HEAP_FLAG_NONE,
+        &d3d12ResourceDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&tempBufferObject)
+    );
+    BYTE* pData;
+    tempBufferObject->Map(0, nullptr, reinterpret_cast<void**>(&pData));
+    BYTE* pDstTempBuffer = reinterpret_cast<BYTE*>(pData + subResourceFootprint.Offset);
+    const BYTE* pSrcData = reinterpret_cast<BYTE*>(inData);
+    for (UINT i = 0; i < rowUsed; i++)
+    {
+        //解释：假如我有一个48字节的数据，gpu默认每次分配都是32字节，对于一个buffer来说每一行数据是32，那么48字节的数据就会以2行每行24字节进行存储，
+        // subResourceFootprint.Footprint.RowPitch代表gpu每次分配的一行的字节数(32)，rowSizeInBytes则表示一行数据所占的字节数(24)，
+        memcpy(pDstTempBuffer + subResourceFootprint.Footprint.RowPitch * i, pSrcData + rowSizeInBytes * i,
+               rowSizeInBytes);
+    }
+    tempBufferObject->Unmap(0, nullptr);
+    inCommandList->CopyBufferRegion(bufferObject, 0,
+                                    tempBufferObject, 0,
+                                    subResourceFootprint.Footprint.Width);
+    D3D12_RESOURCE_BARRIER barrier = InitResourceBarrier(bufferObject, D3D12_RESOURCE_STATE_COPY_DEST,
+                                                         inFinalResourceState);
+    inCommandList->ResourceBarrier(1, &barrier);
+    return bufferObject;
+}
+
+ID3D12Resource* CreateConstantBufferObject(int inDataLen)
+{
+    D3D12_HEAP_PROPERTIES d3dHeapProperties{};
+    d3dHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; //cpu和gpu都可以访问
+
+    D3D12_RESOURCE_DESC d3d12ResourceDesc{};
+    d3d12ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    d3d12ResourceDesc.Alignment = 0;
+    d3d12ResourceDesc.Width = inDataLen;
+    d3d12ResourceDesc.Height = 1;
+    d3d12ResourceDesc.DepthOrArraySize = 1;
+    d3d12ResourceDesc.MipLevels = 1;
+    d3d12ResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+    d3d12ResourceDesc.SampleDesc.Count = 1;
+    d3d12ResourceDesc.SampleDesc.Quality = 0;
+    d3d12ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR; //行为主
+    d3d12ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    ID3D12Resource* bufferObject = nullptr;
+    gD3D12Device->CreateCommittedResource(
+        &d3dHeapProperties,
+        D3D12_HEAP_FLAG_NONE,
+        &d3d12ResourceDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&bufferObject));
+    return bufferObject;
+}
+
+void UpdateConstantBuffer(ID3D12Resource* inCB, void* inData, int inDataLen)
+{
+    D3D12_RANGE d3d12Range = {0};
+    unsigned char* pBuffer = nullptr;
+    inCB->Map(0, &d3d12Range, (void**)&pBuffer);
+    memcpy(pBuffer, inData, inDataLen);
+    inCB->Unmap(0, nullptr);
+}
+
 ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
                                D3D12_SHADER_BYTECODE inVertexShader,
                                D3D12_SHADER_BYTECODE inPixelShader)
@@ -41,6 +221,10 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
         },
         {
             "NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
+            D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
+        },
+        {
+            "TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT,
             D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0
         }
     };
@@ -59,8 +243,7 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     rtBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
     rtBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
     rtBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-
-
+    
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
     psoDesc.pRootSignature = inD3D12RootSignature;
     psoDesc.InputLayout = vertexDataLayoutDesc;
@@ -103,21 +286,6 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     }
 }
 
-D3D12_RESOURCE_BARRIER InitResourceBarrier(ID3D12Resource* inResource,
-                                           D3D12_RESOURCE_STATES inPrevState,
-                                           D3D12_RESOURCE_STATES inNextState
-)
-{
-    D3D12_RESOURCE_BARRIER d3d12ResourceBarrier{};
-    memset(&d3d12ResourceBarrier, 0, sizeof(d3d12ResourceBarrier));
-    d3d12ResourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    d3d12ResourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-    d3d12ResourceBarrier.Transition.pResource = inResource;
-    d3d12ResourceBarrier.Transition.StateBefore = inPrevState;
-    d3d12ResourceBarrier.Transition.StateAfter = inNextState;
-    d3d12ResourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    return d3d12ResourceBarrier;
-}
 
 bool InitD3D12(HWND inHWND, int inWidth, int inHeight)
 {
@@ -207,7 +375,7 @@ bool InitD3D12(HWND inHWND, int inWidth, int inHeight)
     d3d12ResourceDesc.Width = inWidth;
     d3d12ResourceDesc.Height = inHeight;
     d3d12ResourceDesc.DepthOrArraySize = 1;
-    d3d12ResourceDesc.MipLevels = 0;
+    d3d12ResourceDesc.MipLevels = 1;
     d3d12ResourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
     d3d12ResourceDesc.SampleDesc.Count = 1;
     d3d12ResourceDesc.SampleDesc.Quality = 0;
@@ -261,8 +429,6 @@ bool InitD3D12(HWND inHWND, int inWidth, int inHeight)
     gD3D12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gFence));
     gFenceEvent = CreateEvent(nullptr,FALSE,FALSE, nullptr);
 
-    gCurrentRTIndex = gSwapChain->GetCurrentBackBufferIndex();
-
     return true;
 }
 
@@ -273,7 +439,6 @@ void WaitForCompletionOfCommandList()
         gFence->SetEventOnCompletion(gFenceValue, gFenceEvent);
         WaitForSingleObject(gFenceEvent, INFINITE);
     }
-    gCurrentRTIndex = gSwapChain->GetCurrentBackBufferIndex();
 }
 
 void EndCommandList()
@@ -287,6 +452,7 @@ void EndCommandList()
 
 void BeginRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList)
 {
+    gCurrentRTIndex = gSwapChain->GetCurrentBackBufferIndex();
     D3D12_RESOURCE_BARRIER barrier = InitResourceBarrier(gColorRTs[gCurrentRTIndex], D3D12_RESOURCE_STATE_PRESENT,
                                                          D3D12_RESOURCE_STATE_RENDER_TARGET);
     inCommandList->ResourceBarrier(1, &barrier);
@@ -371,21 +537,43 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return -1;
     }
     InitD3D12(hwnd, viewportWidgth, viewportHeigth);
+    StaticMeshComponent staticMeshComponent;
+    staticMeshComponent.InitFromFile(gGraphicsCommandList, "Res/Model/Sphere.lhsm");
 
-    float vertexData[] = {
-        -0.5f, -0.5f, 0.5f, 1.0f, //position
-        1.0f, 0.0f, 0.0, 1.0f, //color
-        0.0f, 0.0f, 0.0f, 0.0f, //normal
-        0.0f, 0.5f, 0.5f, 1.0f, //position
-        0.0f, 1.0f, 0.0, 1.0f, //color
-        0.0f, 0.0f, 0.0f, 0.0f, //normal
-        0.5f, -0.5f, 0.5f, 1.0f, //position
-        0.0f, 0.0f, 1.0, 1.0f, //color
-        0.0f, 0.0f, 0.0f, 0.0f, //normal
-    };
+    ID3D12RootSignature* rootSignature = InitRootSignature();
+    D3D12_SHADER_BYTECODE vs, ps;
+    CreateShaderFromFile(L"Res/Shader/ndctriangle.hlsl", "MainVS", "vs_5_0", &vs);
+    CreateShaderFromFile(L"Res/Shader/ndctriangle.hlsl", "MainPS", "ps_5_0", &ps);
+    ID3D12PipelineState* pso = CreatePSO(rootSignature, vs, ps);
+    ID3D12Resource* cb = CreateConstantBufferObject(65536); //1024*64(4x4矩阵)
+
+    DirectX::XMMATRIX projectionMatrix = DirectX::XMMatrixPerspectiveFovLH(
+        45.0f / 180.0f * DirectX::XM_PI, 1280.0f / 720.f, 0.1f, 1000.0f);
+    DirectX::XMMATRIX viewMatrix = DirectX::XMMatrixIdentity();
+    DirectX::XMMATRIX modelMatrix = DirectX::XMMatrixTranslation(0.f, 0.f, 1.f);
+    DirectX::XMFLOAT4X4 tempMatrix;
+    float matrices[48];
+
+    DirectX::XMStoreFloat4x4(&tempMatrix, projectionMatrix); //xm类型的矩阵是符合cpu编译加速的数据结构，不能直接使用，使用方式是通过XMStoreFloat4x4这种获取
+    memcpy(matrices, &tempMatrix, sizeof(float) * 16);
+
+    DirectX::XMStoreFloat4x4(&tempMatrix, viewMatrix); //xm类型的矩阵是符合cpu编译加速的数据结构，不能直接使用，使用方式是通过XMStoreFloat4x4这种获取
+    memcpy(matrices + 16, &tempMatrix, sizeof(float) * 16);
+
+    DirectX::XMStoreFloat4x4(&tempMatrix, modelMatrix); //xm类型的矩阵是符合cpu编译加速的数据结构，不能直接使用，使用方式是通过XMStoreFloat4x4这种获取
+    memcpy(matrices + 32, &tempMatrix, sizeof(float) * 16);
+
+    UpdateConstantBuffer(cb, matrices, sizeof(float) * 48);
+    EndCommandList();
+
+    WaitForCompletionOfCommandList();
+
+    D3D12_VERTEX_BUFFER_VIEW vbos[] = {staticMeshComponent.m_vboView};
 
     ShowWindow(hwnd, inCmdShow);
     UpdateWindow(hwnd);
+
+    float color[] = {0.5, 0.5, 0.5, 1.0};
 
     MSG msg;
     while (true)
@@ -412,9 +600,26 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             gCommandAllocator->Reset();
             gGraphicsCommandList->Reset(gCommandAllocator, nullptr);
             BeginRenderToSwapChain(gGraphicsCommandList);
+            gGraphicsCommandList->SetPipelineState(pso);
+            gGraphicsCommandList->SetGraphicsRootSignature(rootSignature);
+            gGraphicsCommandList->SetGraphicsRoot32BitConstants(0, 4, color, 0);
+            gGraphicsCommandList->SetGraphicsRootConstantBufferView(1, cb->GetGPUVirtualAddress());
+            gGraphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            gGraphicsCommandList->IASetVertexBuffers(0, 1, vbos);
+
+            for (auto iter = staticMeshComponent.m_subMeshes.begin(); iter != staticMeshComponent.m_subMeshes.end();
+                 iter++)
+            {
+                gGraphicsCommandList->IASetIndexBuffer(&iter->second->m_ibView);
+                gGraphicsCommandList->DrawIndexedInstanced(iter->second->m_indexCount, 1, 0, 0, 0);
+            }
+
+
+            //gGraphicsCommandList->DrawInstanced(3, 1, 0, 0);
+
+
             EndRenderToSwapChain(gGraphicsCommandList);
             EndCommandList();
-
             gSwapChain->Present(0, 0);
         }
     }
