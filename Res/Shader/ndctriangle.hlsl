@@ -18,7 +18,7 @@ static const float PI = 3.141592;
 
 cbuffer globalConstants : register(b0)
 {
-    float4 color;
+    float4 misc;
 };
 
 cbuffer DefaultVertexCB : register(b1)
@@ -33,10 +33,12 @@ cbuffer DefaultVertexCB : register(b1)
 VSOut MainVS(VertexData inVertexData)
 {
     VSOut vo;
-    float4 positionWS = mul(ModelMatrix, inVertexData.position);
+    vo.normal = mul(IT_ModelMatrix, inVertexData.normal);
+    float3 positionMS = inVertexData.position.xyz + vo.normal.xyz * sin(misc.x);
+    float4 positionWS = mul(ModelMatrix, float4(positionMS, 1.f));
     float4 positionVS = mul(ViewMatrix, positionWS);
     vo.position = mul(ProjectionMatrix, positionVS);
-    vo.normal = mul(IT_ModelMatrix, inVertexData.normal);
+    
     vo.positionWS = positionWS;
     vo.texcoord = inVertexData.texcoord;
     return vo;

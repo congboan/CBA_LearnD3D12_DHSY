@@ -2,6 +2,7 @@
 // Created by 77361 on 25-5-7.
 //
 #include <cstdio>
+#include <ctime>
 #include <windows.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -9,12 +10,14 @@
 #include <stdio.h>
 #include <DirectXMath.h>
 #include "BattleFireDirect.h"
+#include "timeapi.h"
 
 #include "StaticMeshComponent.h"
 
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3dcompiler.lib")
+#pragma comment(lib,"winmm.lib")
 
 LPCTSTR gWindowClassName = L"BattleFire";
 //@param inWParam 里面会存储案件信息
@@ -85,10 +88,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     staticMeshComponent.InitFromFile(gGraphicsCommandList, "Res/Model/Sphere.lhsm");
 
     ID3D12RootSignature* rootSignature = InitRootSignature();
-    D3D12_SHADER_BYTECODE vs, ps;
-    CreateShaderFromFile(L"Res/Shader/ndctriangle.hlsl", "MainVS", "vs_5_0", &vs);
-    CreateShaderFromFile(L"Res/Shader/ndctriangle.hlsl", "MainPS", "ps_5_0", &ps);
-    ID3D12PipelineState* pso = CreatePSO(rootSignature, vs, ps);
+    D3D12_SHADER_BYTECODE vs, gs, ps;
+    CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainVS", "vs_5_0", &vs);
+    CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainGS", "gs_5_0", &gs);
+    CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainPS", "ps_5_0", &ps);
+    ID3D12PipelineState* pso = CreatePSO(rootSignature, vs, ps,gs);
     ID3D12Resource* cb = CreateConstantBufferObject(65536); //1024*64(4x4矩阵)
 
     DirectX::XMMATRIX projectionMatrix = DirectX::XMMatrixPerspectiveFovLH(
@@ -126,6 +130,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     UpdateWindow(hwnd);
 
     float color[] = {0.5, 0.5, 0.5, 1.0};
+    DWORD last_time = timeGetTime();
+    DWORD appStartTime = last_time;
 
     MSG msg;
     while (true)
@@ -149,6 +155,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         {
             //render
             WaitForCompletionOfCommandList();
+            DWORD current_time = timeGetTime(); //ms
+            DWORD frameTime = current_time - last_time;
+            DWORD timeSinceAppStartInMS = current_time - appStartTime;
+            last_time = current_time;
+            float frameTimeInSecond = float(frameTime) / 1000.0f;
+            float timeSinceAppStartInSecond = float(timeSinceAppStartInMS) / 1000.0f;
+            color[0] = timeSinceAppStartInSecond;
+
             gCommandAllocator->Reset();
             gGraphicsCommandList->Reset(gCommandAllocator, nullptr);
             BeginRenderToSwapChain(gGraphicsCommandList);
@@ -156,8 +170,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             gGraphicsCommandList->SetGraphicsRootSignature(rootSignature);
             gGraphicsCommandList->SetGraphicsRoot32BitConstants(0, 4, color, 0);
             gGraphicsCommandList->SetGraphicsRootConstantBufferView(1, cb->GetGPUVirtualAddress());
-            gGraphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            staticMeshComponent.Render(gGraphicsCommandList);
+            gGraphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+            /*staticMeshComponent.Render(gGraphicsCommandList);*/
+            D3D12_VERTEX_BUFFER_VIEW vbos[] = {staticMeshComponent.m_vboView};
+            gGraphicsCommandList->IASetVertexBuffers(0, 1, vbos);
+            gGraphicsCommandList->DrawInstanced(staticMeshComponent.m_vertexCount, 1, 0, 0);
+
 
             //gGraphicsCommandList->DrawInstanced(3, 1, 0, 0);
 

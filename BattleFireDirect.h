@@ -25,11 +25,12 @@ void UpdateConstantBuffer(ID3D12Resource* inCB, void* inData, int inDataLen);
 
 ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
                                D3D12_SHADER_BYTECODE inVertexShader,
-                               D3D12_SHADER_BYTECODE inPixelShader);
+                               D3D12_SHADER_BYTECODE inPixelShader,
+                               D3D12_SHADER_BYTECODE inGeometryShader);
 
 bool InitD3D12(HWND inHWND, int inWidth, int inHeight);
 
-ID3D12GraphicsCommandList*GetCommandList();
+ID3D12GraphicsCommandList* GetCommandList();
 ID3D12CommandAllocator* GetCommandAllocator();
 
 void WaitForCompletionOfCommandList();
@@ -41,4 +42,3 @@ void BeginRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList);
 void EndRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList);
 
 void SwapD3D12Buffers();
-

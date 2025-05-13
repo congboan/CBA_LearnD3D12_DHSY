@@ -112,7 +112,7 @@ ID3D12RootSignature* InitRootSignature()
     rootParameters[0].Constants.Num32BitValues = 4;
 
     rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     rootParameters[1].Descriptor.RegisterSpace = 0; //descriptor占两个DWORLD
     rootParameters[1].Descriptor.ShaderRegister = 1; //cbv
 
@@ -143,6 +143,8 @@ void CreateShaderFromFile(
                                          &errorBuffer);
     if (FAILED(hResult))
     {
+        char szlog[1024]={0};
+        /*strcpy(szlog,(char*)errorBuffer->GetBufferPointer());*/
         printf("CreateShaderFormFile error:[%s][%s]:[%s]", inMainFunctionName, inTarget,
                (char*)errorBuffer->GetBufferPointer());
         errorBuffer->Release();
@@ -193,7 +195,8 @@ void UpdateConstantBuffer(ID3D12Resource* inCB, void* inData, int inDataLen)
 
 ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
                                D3D12_SHADER_BYTECODE inVertexShader,
-                               D3D12_SHADER_BYTECODE inPixelShader)
+                               D3D12_SHADER_BYTECODE inPixelShader,
+                               D3D12_SHADER_BYTECODE inGeometryShader)
 {
     D3D12_INPUT_ELEMENT_DESC vertexDataElementDesc[] =
     {
@@ -231,13 +234,14 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     psoDesc.pRootSignature = inD3D12RootSignature;
     psoDesc.InputLayout = vertexDataLayoutDesc;
     psoDesc.VS = inVertexShader;
+    psoDesc.GS = inGeometryShader;
     psoDesc.PS = inPixelShader;
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
     psoDesc.SampleMask = 0xffffffff;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID; //实心模式
     psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
     psoDesc.RasterizerState.FrontCounterClockwise = false;
@@ -474,5 +478,3 @@ void SwapD3D12Buffers()
 {
     gSwapChain->Present(0, 0);
 }
-
-
