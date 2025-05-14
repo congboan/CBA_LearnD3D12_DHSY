@@ -92,7 +92,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainVS", "vs_5_0", &vs);
     CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainGS", "gs_5_0", &gs);
     CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainPS", "ps_5_0", &ps);
-    ID3D12PipelineState* pso = CreatePSO(rootSignature, vs, ps,gs);
+    ID3D12PipelineState* pso = CreatePSO(rootSignature, vs, ps, gs);
     ID3D12Resource* cb = CreateConstantBufferObject(65536); //1024*64(4x4矩阵)
 
     DirectX::XMMATRIX projectionMatrix = DirectX::XMMatrixPerspectiveFovLH(
@@ -122,6 +122,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     UpdateConstantBuffer(cb, matrices, sizeof(float) * 64);
+
+    ID3D12Resource* texture = CreateTexture2D(gGraphicsCommandList);
+    ID3D12DescriptorHeap* srvHeap = nullptr;
+    ID3D12Device* device = GetD3DDevice();
+    D3D12_DESCRIPTOR_HEAP_DESC d3dDescriptorHeapDescSRV{};
+    d3dDescriptorHeapDescSRV.NumDescriptors = 1;
+    d3dDescriptorHeapDescSRV.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    d3dDescriptorHeapDescSRV.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    device->CreateDescriptorHeap(&d3dDescriptorHeapDescSRV,IID_PPV_ARGS(&srvHeap));
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    ID3D12DescriptorHeap* descriptroHeaps[] = {srvHeap};
+    srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; //rgba通道的互相映射
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+    srvDesc.Texture2D.PlaneSlice = 0;
+    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+
+    device->CreateShaderResourceView(texture, &srvDesc, srvHeap->GetCPUDescriptorHandleForHeapStart());
     EndCommandList();
 
     WaitForCompletionOfCommandList();
@@ -168,8 +189,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             BeginRenderToSwapChain(gGraphicsCommandList);
             gGraphicsCommandList->SetPipelineState(pso);
             gGraphicsCommandList->SetGraphicsRootSignature(rootSignature);
+            gGraphicsCommandList->SetDescriptorHeaps(_countof(descriptroHeaps), descriptroHeaps);
+
             gGraphicsCommandList->SetGraphicsRoot32BitConstants(0, 4, color, 0);
             gGraphicsCommandList->SetGraphicsRootConstantBufferView(1, cb->GetGPUVirtualAddress());
+            gGraphicsCommandList->SetGraphicsRootDescriptorTable(2, srvHeap->GetGPUDescriptorHandleForHeapStart());
             gGraphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
             /*staticMeshComponent.Render(gGraphicsCommandList);*/
             D3D12_VERTEX_BUFFER_VIEW vbos[] = {staticMeshComponent.m_vboView};
