@@ -1,16 +1,10 @@
 //
 // Created by 77361 on 25-5-7.
 //
-#include <cstdio>
-#include <ctime>
-#include <windows.h>
-#include <d3d12.h>
-#include <dxgi1_4.h>
-#include <d3dcompiler.h>
-#include <stdio.h>
-#include <DirectXMath.h>
+
 #include "BattleFireDirect.h"
-#include "timeapi.h"
+#include "Scene.h"
+
 
 #include "StaticMeshComponent.h"
 
@@ -80,77 +74,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return -1;
     }
     InitD3D12(hwnd, viewportWidgth, viewportHeigth);
-    ID3D12GraphicsCommandList* gGraphicsCommandList = GetCommandList();
-    ID3D12CommandAllocator* gCommandAllocator = GetCommandAllocator();
+    InitScene(viewportWidgth, viewportHeigth);
 
-
-    StaticMeshComponent staticMeshComponent;
-    staticMeshComponent.InitFromFile(gGraphicsCommandList, "Res/Model/Sphere.lhsm");
-
-    ID3D12RootSignature* rootSignature = InitRootSignature();
-    D3D12_SHADER_BYTECODE vs, gs, ps;
-    CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainVS", "vs_5_0", &vs);
-    CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainGS", "gs_5_0", &gs);
-    CreateShaderFromFile(L"Res/Shader/gs.hlsl", "MainPS", "ps_5_0", &ps);
-    ID3D12PipelineState* pso = CreatePSO(rootSignature, vs, ps, gs);
-    ID3D12Resource* cb = CreateConstantBufferObject(65536); //1024*64(4x4矩阵)
-
-    DirectX::XMMATRIX projectionMatrix = DirectX::XMMatrixPerspectiveFovLH(
-        45.0f / 180.0f * DirectX::XM_PI, 1280.0f / 720.f, 0.1f, 1000.0f);
-    DirectX::XMMATRIX viewMatrix = DirectX::XMMatrixIdentity();
-    DirectX::XMMATRIX modelMatrix = DirectX::XMMatrixTranslation(0.f, 0.f, 5.f);
-    DirectX::XMFLOAT4X4 tempMatrix;
-    modelMatrix *= DirectX::XMMatrixRotationZ(90.f / 180.f * DirectX::XM_PI);
-    float matrices[48];
-
-    DirectX::XMStoreFloat4x4(&tempMatrix, projectionMatrix); //xm类型的矩阵是符合cpu编译加速的数据结构，不能直接使用，使用方式是通过XMStoreFloat4x4这种获取
-    memcpy(matrices, &tempMatrix, sizeof(float) * 16);
-
-    DirectX::XMStoreFloat4x4(&tempMatrix, viewMatrix); //xm类型的矩阵是符合cpu编译加速的数据结构，不能直接使用，使用方式是通过XMStoreFloat4x4这种获取
-    memcpy(matrices + 16, &tempMatrix, sizeof(float) * 16);
-
-    DirectX::XMStoreFloat4x4(&tempMatrix, modelMatrix); //xm类型的矩阵是符合cpu编译加速的数据结构，不能直接使用，使用方式是通过XMStoreFloat4x4这种获取
-    memcpy(matrices + 32, &tempMatrix, sizeof(float) * 16);
-
-    DirectX::XMVECTOR determinant;
-    DirectX::XMMATRIX inverseModelMatrix = DirectX::XMMatrixInverse(&determinant, modelMatrix);
-    if (DirectX::XMVectorGetX(determinant) != 0.0f)
-    {
-        DirectX::XMMATRIX normalMatrix = DirectX::XMMatrixTranspose(inverseModelMatrix);
-        DirectX::XMStoreFloat4x4(&tempMatrix, normalMatrix);
-        memcpy(matrices + 48, &tempMatrix, sizeof(float) * 16);
-    }
-
-    UpdateConstantBuffer(cb, matrices, sizeof(float) * 64);
-
-    ID3D12Resource* texture = CreateTexture2D(gGraphicsCommandList);
-    ID3D12DescriptorHeap* srvHeap = nullptr;
-    ID3D12Device* device = GetD3DDevice();
-    D3D12_DESCRIPTOR_HEAP_DESC d3dDescriptorHeapDescSRV{};
-    d3dDescriptorHeapDescSRV.NumDescriptors = 1;
-    d3dDescriptorHeapDescSRV.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    d3dDescriptorHeapDescSRV.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    device->CreateDescriptorHeap(&d3dDescriptorHeapDescSRV,IID_PPV_ARGS(&srvHeap));
-
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-    ID3D12DescriptorHeap* descriptroHeaps[] = {srvHeap};
-    srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; //rgba通道的互相映射
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
-    srvDesc.Texture2D.MostDetailedMip = 0;
-    srvDesc.Texture2D.PlaneSlice = 0;
-    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-
-    device->CreateShaderResourceView(texture, &srvDesc, srvHeap->GetCPUDescriptorHandleForHeapStart());
-    EndCommandList();
-
-    WaitForCompletionOfCommandList();
 
     ShowWindow(hwnd, inCmdShow);
     UpdateWindow(hwnd);
-
-    float color[] = {0.5, 0.5, 0.5, 1.0};
+    
     DWORD last_time = timeGetTime();
     DWORD appStartTime = last_time;
 
@@ -182,29 +111,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             last_time = current_time;
             float frameTimeInSecond = float(frameTime) / 1000.0f;
             float timeSinceAppStartInSecond = float(timeSinceAppStartInMS) / 1000.0f;
-            color[0] = timeSinceAppStartInSecond;
 
-            gCommandAllocator->Reset();
-            gGraphicsCommandList->Reset(gCommandAllocator, nullptr);
-            BeginRenderToSwapChain(gGraphicsCommandList);
-            gGraphicsCommandList->SetPipelineState(pso);
-            gGraphicsCommandList->SetGraphicsRootSignature(rootSignature);
-            gGraphicsCommandList->SetDescriptorHeaps(_countof(descriptroHeaps), descriptroHeaps);
-
-            gGraphicsCommandList->SetGraphicsRoot32BitConstants(0, 4, color, 0);
-            gGraphicsCommandList->SetGraphicsRootConstantBufferView(1, cb->GetGPUVirtualAddress());
-            gGraphicsCommandList->SetGraphicsRootDescriptorTable(2, srvHeap->GetGPUDescriptorHandleForHeapStart());
-            gGraphicsCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-            /*staticMeshComponent.Render(gGraphicsCommandList);*/
-            D3D12_VERTEX_BUFFER_VIEW vbos[] = {staticMeshComponent.m_vboView};
-            gGraphicsCommandList->IASetVertexBuffers(0, 1, vbos);
-            gGraphicsCommandList->DrawInstanced(staticMeshComponent.m_vertexCount, 1, 0, 0);
-
-
-            //gGraphicsCommandList->DrawInstanced(3, 1, 0, 0);
-
-            EndRenderToSwapChain(gGraphicsCommandList);
-            EndCommandList();
+            RenderOneFrame(frameTimeInSecond, timeSinceAppStartInSecond);
             SwapD3D12Buffers();
         }
     }

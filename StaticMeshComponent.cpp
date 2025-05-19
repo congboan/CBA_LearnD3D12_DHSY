@@ -4,6 +4,12 @@
 #include "BattleFireDirect.h"
 
 
+StaticMeshComponent::StaticMeshComponent(): m_bRenderWithSubMesh(true),
+                                            m_PrimitiveType(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST),
+                                            m_vertexCount(0)
+{
+}
+
 void StaticMeshComponent::InitFromFile(ID3D12GraphicsCommandList* inCommandList, const char* inFilePath)
 {
     FILE* pFile = nullptr;
@@ -53,19 +59,37 @@ void StaticMeshComponent::InitFromFile(ID3D12GraphicsCommandList* inCommandList,
 
 void StaticMeshComponent::Render(ID3D12GraphicsCommandList* inCommandList)
 {
+    if (m_vertexCount == 0)
+    {
+        return;
+    }
+    inCommandList->IASetPrimitiveTopology(m_PrimitiveType);
     D3D12_VERTEX_BUFFER_VIEW vbos[] = {m_vboView};
     inCommandList->IASetVertexBuffers(0, 1, vbos);
-    if (m_subMeshes.empty())
+    if (m_bRenderWithSubMesh)
     {
-        inCommandList->DrawInstanced(m_vertexCount,1,0,0);
-    }
-    else
-    {
-        for (auto iter = m_subMeshes.begin(); iter != m_subMeshes.end();
-             iter++)
+        if (!m_subMeshes.empty())
         {
-            inCommandList->IASetIndexBuffer(&iter->second->m_ibView);
-            inCommandList->DrawIndexedInstanced(iter->second->m_indexCount, 1, 0, 0, 0);
+            for (auto iter = m_subMeshes.begin(); iter != m_subMeshes.end();
+                 iter++)
+            {
+                inCommandList->IASetIndexBuffer(&iter->second->m_ibView);
+                inCommandList->DrawIndexedInstanced(iter->second->m_indexCount, 1, 0, 0, 0);
+            }
+            return;
         }
     }
+
+
+    inCommandList->DrawInstanced(m_vertexCount, 1, 0, 0);
+}
+
+void StaticMeshComponent::SetPrimitive(D3D_PRIMITIVE_TOPOLOGY inPrimitiveType)
+{
+    m_PrimitiveType = inPrimitiveType;
+}
+
+void StaticMeshComponent::SetIsRenderWithSubMesh(bool inIsRenderWithSubMesh)
+{
+    m_bRenderWithSubMesh = inIsRenderWithSubMesh;
 }

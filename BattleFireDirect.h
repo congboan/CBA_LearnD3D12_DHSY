@@ -43,6 +43,7 @@ void EndRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList);
 
 void SwapD3D12Buffers();
 
-ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList);
+ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const void* inPixelData, int inDataSizeInByte,
+                                int inWidth, int inHeight, DXGI_FORMAT inFormat);
 
 ID3D12Device* GetD3DDevice();

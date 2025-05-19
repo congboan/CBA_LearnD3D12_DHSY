@@ -104,10 +104,10 @@ D3D12_RESOURCE_BARRIER InitResourceBarrier(ID3D12Resource* inResource,
 
 ID3D12RootSignature* InitRootSignature()
 {
-    D3D12_ROOT_PARAMETER rootParameters[3]; //最多占64个DWORLD
+    D3D12_ROOT_PARAMETER rootParameters[4]; //最多占64个DWORLD
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-    rootParameters[0].Constants.RegisterSpace = 0; //有点类似于namespace 
+    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    rootParameters[0].Constants.RegisterSpace = 0; //有点类似于namespace  
     rootParameters[0].Constants.ShaderRegister = 0; //对应shader中:register(b0)
     rootParameters[0].Constants.Num32BitValues = 4;
 
@@ -123,10 +123,15 @@ ID3D12RootSignature* InitRootSignature()
     descriptorRange[0].NumDescriptors = 1;
     descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;//2个DWORD
     rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRange;
     rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
+
+    rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+    rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    rootParameters[3].Descriptor.RegisterSpace = 1;
+    rootParameters[3].Descriptor.ShaderRegister = 0;//srv
 
     D3D12_STATIC_SAMPLER_DESC samplerDesc[1];
     memset(samplerDesc, 0, sizeof(D3D12_STATIC_SAMPLER_DESC) * _countof(samplerDesc));
@@ -247,11 +252,11 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     D3D12_RENDER_TARGET_BLEND_DESC rtBlendDesc{};
     rtBlendDesc.BlendEnable = FALSE;
     rtBlendDesc.LogicOpEnable = FALSE;
-    rtBlendDesc.SrcBlend = D3D12_BLEND_ONE;
-    rtBlendDesc.DestBlend = D3D12_BLEND_ZERO;
+    rtBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    rtBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
     rtBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
-    rtBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
-    rtBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+    rtBlendDesc.SrcBlendAlpha = D3D12_BLEND_SRC_ALPHA;
+    rtBlendDesc.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
     rtBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
     rtBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
     rtBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
@@ -267,7 +272,7 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
     psoDesc.SampleMask = 0xffffffff;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID; //实心模式
     psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
     psoDesc.RasterizerState.FrontCounterClockwise = false;
@@ -285,6 +290,8 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; //深度可写
     psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS; //绘制时可以让离眼睛更近的物体覆盖掉更远的
     psoDesc.BlendState = {0};
+
+
     for (int i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
     {
         psoDesc.BlendState.RenderTarget[i] = rtBlendDesc;
@@ -505,7 +512,8 @@ void SwapD3D12Buffers()
     gSwapChain->Present(0, 0);
 }
 
-ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList)
+ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const void* inPixelData, int inDataSizeInByte,
+                                int inWidth, int inHeight, DXGI_FORMAT inFormat)
 {
     D3D12_HEAP_PROPERTIES d3d12HeapProps{};
     d3d12HeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -513,11 +521,11 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList)
     D3D12_RESOURCE_DESC d3d12ResourceDesc{};
     d3d12ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     d3d12ResourceDesc.Alignment = 0;
-    d3d12ResourceDesc.Width = 256;
-    d3d12ResourceDesc.Height = 256;
+    d3d12ResourceDesc.Width = inWidth;
+    d3d12ResourceDesc.Height = inHeight;
     d3d12ResourceDesc.DepthOrArraySize = 1;
     d3d12ResourceDesc.MipLevels = 1;
-    d3d12ResourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    d3d12ResourceDesc.Format = inFormat;
     d3d12ResourceDesc.SampleDesc.Count = 1;
     d3d12ResourceDesc.SampleDesc.Quality = 0;
     d3d12ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
@@ -552,6 +560,8 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList)
     d3d12TempResourceDesc.SampleDesc.Quality = 0;
     d3d12TempResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     d3d12TempResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    
+    
 
     gD3D12Device->CreateCommittedResource(
         &d3d12TempHeapProps,
@@ -562,30 +572,12 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList)
         IID_PPV_ARGS(&tempBufferObject)
     );
 
-    unsigned char* inData = new unsigned char[256 * 256 * 4];
-    memset(inData, 0, 256 * 256 * 4);
-    for (int y = 0; y < 256; y++)
-    {
-        for (int x = 0; x < 256; x++)
-        {
-            float radiusSqrt = float((x - 128) * (x - 128) + (y - 128) * (y - 128));
-            if (radiusSqrt <= 128 * 128)
-            {
-                float radius = sqrtf(radiusSqrt);
-                float alpha = radius / 128.0f;
-                int pixelIndex = y * 256 + x;
-                inData[pixelIndex * 4] = 255;
-                inData[pixelIndex * 4 + 1] = 255;
-                inData[pixelIndex * 4 + 2] = 255;
-                inData[pixelIndex * 4 + 3] = unsigned char(255.0f * alpha);
-            }
-        }
-    }
+   
 
     BYTE* pData;
     tempBufferObject->Map(0, nullptr, reinterpret_cast<void**>(&pData));
     BYTE* pDstTempBuffer = reinterpret_cast<BYTE*>(pData + subResourceFootprint.Offset);
-    const BYTE* pSrcData = reinterpret_cast<BYTE*>(inData); //reinterpret_cast<BYTE*>(inData);
+    const BYTE* pSrcData = reinterpret_cast<const BYTE*>(inPixelData); //reinterpret_cast<BYTE*>(inData);
     for (UINT i = 0; i < rowUsed; i++)
     {
         //解释：假如我有一个48字节的数据，gpu默认每次分配都是32字节，对于一个buffer来说每一行数据是32，那么48字节的数据就会以2行每行24字节进行存储，

@@ -21,12 +21,18 @@ struct SubMesh
 class StaticMeshComponent
 {
 public:
+    StaticMeshComponent();
+protected:
     ID3D12Resource* m_vbo;
     D3D12_VERTEX_BUFFER_VIEW m_vboView;
     StaticMeshComponentVertexData* m_vertexData;
+    bool m_bRenderWithSubMesh;
+    D3D_PRIMITIVE_TOPOLOGY m_PrimitiveType;
     int m_vertexCount;
     std::unordered_map<std::string, SubMesh*> m_subMeshes;
+public:
     void InitFromFile(ID3D12GraphicsCommandList* inCommandList, const char* inFilePath);
-
     void Render(ID3D12GraphicsCommandList* inCommandList);
+    void SetPrimitive(D3D_PRIMITIVE_TOPOLOGY inPrimitiveType);
+    void SetIsRenderWithSubMesh(bool inIsRenderWithSubMesh);
 };

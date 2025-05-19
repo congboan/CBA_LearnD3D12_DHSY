@@ -29,8 +29,16 @@ cbuffer DefaultVertexCB : register(b1)
     float4x4 ReservedMemory[1020];
 };
 
-Texture2D tex : register(t0);
+Texture2D T_diffuseTexture : register(t0);
 SamplerState samplerState : register(s0);
+
+
+struct MaterialData
+{
+    float r;
+};
+
+StructuredBuffer<MaterialData> materialData : register(t0, space1);
 
 VSOut MainVS(VertexData inVertexData)
 {
@@ -38,51 +46,76 @@ VSOut MainVS(VertexData inVertexData)
     vo.normal = mul(IT_ModelMatrix, inVertexData.normal);
     float3 positionMS = inVertexData.position.xyz + vo.normal.xyz * sin(misc.x);
     float4 positionWS = mul(ModelMatrix, inVertexData.position);
-    //float4 positionVS = mul(ViewMatrix, positionWS);
-    //vo.position = mul(ProjectionMatrix, positionVS);
+    float4 positionVS = mul(ViewMatrix, positionWS);
+    vo.position = mul(ProjectionMatrix, positionVS);
     
-    vo.position = float4(positionWS.xyz + vo.normal.xyz * sin(misc.x)*0.2, 1.0f);
+    //vo.position = float4(positionWS.xyz + vo.normal.xyz * sin(misc.x)*0.2, 1.0f);
+    vo.texcoord = inVertexData.texcoord;
     return vo;
 }
 
 [maxvertexcount(4)]
-void MainGS(point VSOut inPoint[1], uint inPrimitiveID : SV_PrimitiveID, inout TriangleStream<VSOut> outTriangleStream)
+void MainGS(triangle VSOut inPoint[3], uint inPrimitiveID : SV_PrimitiveID, inout TriangleStream<VSOut> outTriangleStream)
 {
-    float3 positionWS = inPoint[0].position.xyz;
-    float3 N = normalize(inPoint[0].normal.xyz);
-    float3 helperVec = abs(N.y) > 0.99 ? float3(0.0f, 0.0f, 1.0f) : float3(0.0f, 1.0f, 0.0f);
-    float3 tangent = normalize(cross(N, helperVec));
-    float3 bitangent = normalize(cross(tangent, N));
-    
-    float scale = 0.1;
-    
+    float3 N = normalize(inPoint[0].normal.xyz + inPoint[1].normal.xyz + inPoint[2].normal.xyz);
+    float scale = materialData[inPrimitiveID].r;
+    float3 offset = N * abs(sin(misc.x * 4.0f)) * 0.2f;
     VSOut vo;
-    vo.normal = float4(N,0.f);
-    
-    
-    float3 p0WS = positionWS - (bitangent * 0.5f + tangent * 0.5f)*scale;
-    float4 p0VS = mul(ViewMatrix, float4(p0WS, 1.0f));
-    vo.position = mul(ProjectionMatrix, p0VS);
-    vo.texcoord = float4(0.f, 1.f, 0.f, 0.f);
+    float3 positionWS = inPoint[0].position.xyz + offset;
+    float4 positionVS = mul(ViewMatrix, float4(positionWS, 1));
+    vo.position = mul(ProjectionMatrix, positionVS);
+    vo.normal = inPoint[0].normal;
+    vo.texcoord = inPoint[0].texcoord;
     outTriangleStream.Append(vo);
     
-    float3 p1WS = positionWS + (bitangent * 0.5f - tangent * 0.5f) * scale;
-    float4 p1VS = mul(ViewMatrix, float4(p1WS, 1.0f));
-    vo.position = mul(ProjectionMatrix, p1VS);
-    vo.texcoord = float4(1.f, 1.f, 0.f, 0.f);
+    positionWS = inPoint[1].position.xyz + offset;
+    positionVS = mul(ViewMatrix, float4(positionWS, 1));
+    vo.position = mul(ProjectionMatrix, positionVS);
+    vo.normal = inPoint[1].normal;
+    vo.texcoord = inPoint[1].texcoord;
     outTriangleStream.Append(vo);
     
-    float3 p2WS = positionWS - (bitangent * 0.5f - tangent * 0.5f) * scale;
-    float4 p2VS = mul(ViewMatrix, float4(p2WS, 1.0f));
-    vo.position = mul(ProjectionMatrix, p2VS);
-    vo.texcoord = float4(0.f, 0.f, 0.f, 0.f);
+    positionWS = inPoint[2].position.xyz + offset;
+    positionVS = mul(ViewMatrix, float4(positionWS, 1));
+    vo.position = mul(ProjectionMatrix, positionVS);
+    vo.normal = inPoint[2].normal;
+    vo.texcoord = inPoint[2].texcoord;
     outTriangleStream.Append(vo);
+    //float3 positionWS = inPoint[0].position.xyz;
+    //float3 N = normalize(inPoint[0].normal.xyz);
+    //float3 helperVec = abs(N.y) > 0.99 ? float3(0.0f, 0.0f, 1.0f) : float3(0.0f, 1.0f, 0.0f);
+    //float3 tangent = normalize(cross(N, helperVec));
+    //float3 bitangent = normalize(cross(tangent, N));
     
-    float3 p3WS = positionWS + (bitangent * 0.5f + tangent * 0.5f) * scale;
-    float4 p3VS = mul(ViewMatrix, float4(p3WS, 1.0f));
-    vo.position = mul(ProjectionMatrix, p3VS);
-    vo.texcoord = float4(1.f, 0.f, 0.f, 0.f);
-    outTriangleStream.Append(vo);
+    //float scale = materialData[inPrimitiveID].r;
+    
+    //VSOut vo;
+    //vo.normal = float4(N,0.f);
+    
+    
+    //float3 p0WS = positionWS - (bitangent * 0.5f + tangent * 0.5f)*scale;
+    //float4 p0VS = mul(ViewMatrix, float4(p0WS, 1.0f));
+    //vo.position = mul(ProjectionMatrix, p0VS);
+    //vo.texcoord = float4(0.f, 1.f, 0.f, 0.f);
+    //outTriangleStream.Append(vo);
+    
+    //float3 p1WS = positionWS + (bitangent * 0.5f - tangent * 0.5f) * scale;
+    //float4 p1VS = mul(ViewMatrix, float4(p1WS, 1.0f));
+    //vo.position = mul(ProjectionMatrix, p1VS);
+    //vo.texcoord = float4(1.f, 1.f, 0.f, 0.f);
+    //outTriangleStream.Append(vo);
+    
+    //float3 p2WS = positionWS - (bitangent * 0.5f - tangent * 0.5f) * scale;
+    //float4 p2VS = mul(ViewMatrix, float4(p2WS, 1.0f));
+    //vo.position = mul(ProjectionMatrix, p2VS);
+    //vo.texcoord = float4(0.f, 0.f, 0.f, 0.f);
+    //outTriangleStream.Append(vo);
+    
+    //float3 p3WS = positionWS + (bitangent * 0.5f + tangent * 0.5f) * scale;
+    //float4 p3VS = mul(ViewMatrix, float4(p3WS, 1.0f));
+    //vo.position = mul(ProjectionMatrix, p3VS);
+    //vo.texcoord = float4(1.f, 0.f, 0.f, 0.f);
+    //outTriangleStream.Append(vo);
  
 }
  
@@ -97,7 +130,8 @@ float4 MainPS(VSOut inPSInput) : SV_TARGET
     
     float ambientColorIntensity = 1;
     float3 ambientColor = lerp(bottomColor, topColor, theta) * ambientColorIntensity;
-   
-    float3 surfaceColor = ambientColor + tex.Sample(samplerState, inPSInput.texcoord.xy);
-    return float4(surfaceColor, 1.f);
+    float4 diffusecolor = T_diffuseTexture.Sample(samplerState, inPSInput.texcoord.xy);
+    
+    float3 surfaceColor = diffusecolor.rgb;
+    return float4(surfaceColor, 1);
 }
