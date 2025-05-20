@@ -109,7 +109,7 @@ ID3D12RootSignature* InitRootSignature()
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     rootParameters[0].Constants.RegisterSpace = 0; //有点类似于namespace  
     rootParameters[0].Constants.ShaderRegister = 0; //对应shader中:register(b0)
-    rootParameters[0].Constants.Num32BitValues = 4;
+    rootParameters[0].Constants.Num32BitValues = 36;
 
     rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;

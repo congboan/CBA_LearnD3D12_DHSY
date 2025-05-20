@@ -17,13 +17,13 @@ static const float PI = 3.141592;
 
 cbuffer globalConstants : register(b0)
 {
+    float4x4 ProjectionMatrix;
+    float4x4 ViewMatrix;
     float4 misc;
 };
 
 cbuffer DefaultVertexCB : register(b1)
 {
-    float4x4 ProjectionMatrix;
-    float4x4 ViewMatrix;
     float4x4 ModelMatrix;
     float4x4 IT_ModelMatrix;
     float4x4 ReservedMemory[1020];
@@ -44,11 +44,7 @@ VSOut MainVS(VertexData inVertexData)
 {
     VSOut vo;
     vo.normal = mul(IT_ModelMatrix, inVertexData.normal);
-    float3 positionMS = inVertexData.position.xyz + vo.normal.xyz * sin(misc.x);
-    float4 positionWS = mul(ModelMatrix, inVertexData.position);
-    float4 positionVS = mul(ViewMatrix, positionWS);
-    vo.position = mul(ProjectionMatrix, positionVS);
-    
+    vo.position = mul(ModelMatrix, inVertexData.position);
     //vo.position = float4(positionWS.xyz + vo.normal.xyz * sin(misc.x)*0.2, 1.0f);
     vo.texcoord = inVertexData.texcoord;
     return vo;
