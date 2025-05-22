@@ -1,5 +1,7 @@
 #include "BattleFireDirect.h"
 
+#include "stbi/stb_image.h"
+
 ID3D12Device* gD3D12Device = nullptr;
 ID3D12CommandQueue* gD3D12CommandQueue = nullptr;
 IDXGISwapChain3* gSwapChain = nullptr;
@@ -104,7 +106,7 @@ D3D12_RESOURCE_BARRIER InitResourceBarrier(ID3D12Resource* inResource,
 
 ID3D12RootSignature* InitRootSignature()
 {
-    D3D12_ROOT_PARAMETER rootParameters[4]; //最多占64个DWORLD
+    D3D12_ROOT_PARAMETER rootParameters[5]; //最多占64个DWORLD
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     rootParameters[0].Constants.RegisterSpace = 0; //有点类似于namespace  
@@ -123,7 +125,7 @@ ID3D12RootSignature* InitRootSignature()
     descriptorRange[0].NumDescriptors = 1;
     descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;//2个DWORD
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; //2个DWORD
     rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRange;
     rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
@@ -131,7 +133,12 @@ ID3D12RootSignature* InitRootSignature()
     rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
     rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     rootParameters[3].Descriptor.RegisterSpace = 1;
-    rootParameters[3].Descriptor.ShaderRegister = 0;//srv
+    rootParameters[3].Descriptor.ShaderRegister = 0; //srv
+
+    rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+    rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    rootParameters[4].Descriptor.RegisterSpace = 1;
+    rootParameters[4].Descriptor.ShaderRegister = 1; //srv
 
     D3D12_STATIC_SAMPLER_DESC samplerDesc[1];
     memset(samplerDesc, 0, sizeof(D3D12_STATIC_SAMPLER_DESC) * _countof(samplerDesc));
@@ -186,7 +193,7 @@ void CreateShaderFromFile(
 }
 
 
-ID3D12Resource* CreateConstantBufferObject(int inDataLen)
+ID3D12Resource* CreateCPUGPUBufferObject(int inDataLen)
 {
     D3D12_HEAP_PROPERTIES d3dHeapProperties{};
     d3dHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; //cpu和gpu都可以访问
@@ -560,8 +567,7 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const 
     d3d12TempResourceDesc.SampleDesc.Quality = 0;
     d3d12TempResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     d3d12TempResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    
-    
+
 
     gD3D12Device->CreateCommittedResource(
         &d3d12TempHeapProps,
@@ -572,7 +578,6 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const 
         IID_PPV_ARGS(&tempBufferObject)
     );
 
-   
 
     BYTE* pData;
     tempBufferObject->Map(0, nullptr, reinterpret_cast<void**>(&pData));
@@ -608,4 +613,18 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const 
 ID3D12Device* GetD3DDevice()
 {
     return gD3D12Device;
+}
+
+Texture2D* LoadTexture2DFromFile(ID3D12GraphicsCommandList* inCommandList, const char* inFilePath)
+{
+    int inmageWidth, imageHeight, imageChannel;
+    stbi_uc* pixels = stbi_load(inFilePath, &inmageWidth, &imageHeight, &imageChannel, 4);
+    ID3D12Resource* texture = CreateTexture2D(inCommandList, pixels, inmageWidth * imageHeight * imageChannel,
+                                              inmageWidth, imageHeight,
+                                              DXGI_FORMAT_R8G8B8A8_UNORM);
+    delete[]pixels;
+    Texture2D* texture2D = new Texture2D();
+    texture2D->m_format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    texture2D->m_resource = texture;
+    return texture2D;
 }

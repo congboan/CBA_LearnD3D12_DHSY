@@ -3,6 +3,8 @@
 #include <string>
 #include <unordered_map>
 
+class Material;
+
 struct StaticMeshComponentVertexData
 {
     float m_position[4];
@@ -27,6 +29,7 @@ protected:
     D3D12_VERTEX_BUFFER_VIEW m_vboView;
     StaticMeshComponentVertexData* m_vertexData;
     bool m_bRenderWithSubMesh;
+    
     D3D_PRIMITIVE_TOPOLOGY m_PrimitiveType;
     int m_vertexCount;
     std::unordered_map<std::string, SubMesh*> m_subMeshes;
@@ -35,4 +38,5 @@ public:
     void Render(ID3D12GraphicsCommandList* inCommandList);
     void SetPrimitive(D3D_PRIMITIVE_TOPOLOGY inPrimitiveType);
     void SetIsRenderWithSubMesh(bool inIsRenderWithSubMesh);
+    Material* m_material = nullptr;
 };

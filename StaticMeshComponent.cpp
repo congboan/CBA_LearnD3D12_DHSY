@@ -1,12 +1,13 @@
 #include "StaticMeshComponent.h"
 #include <stdio.h>
-
+#include "Material.h"
 #include "BattleFireDirect.h"
 
 
 StaticMeshComponent::StaticMeshComponent(): m_bRenderWithSubMesh(true),
                                             m_PrimitiveType(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST),
-                                            m_vertexCount(0)
+                                            m_vertexCount(0),
+                                            m_material(nullptr)
 {
 }
 
@@ -63,6 +64,7 @@ void StaticMeshComponent::Render(ID3D12GraphicsCommandList* inCommandList)
     {
         return;
     }
+    m_material->Active(inCommandList);
     inCommandList->IASetPrimitiveTopology(m_PrimitiveType);
     D3D12_VERTEX_BUFFER_VIEW vbos[] = {m_vboView};
     inCommandList->IASetVertexBuffers(0, 1, vbos);

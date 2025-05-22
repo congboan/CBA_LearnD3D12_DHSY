@@ -19,7 +19,7 @@ void CreateShaderFromFile(LPCTSTR inShaderFilePath, const char* inMainFunctionNa
                           //vs  vs_5_1 ps  ps_5_1 版本
                           D3D12_SHADER_BYTECODE* inShader);
 
-ID3D12Resource* CreateConstantBufferObject(int inDataLen);
+ID3D12Resource* CreateCPUGPUBufferObject(int inDataLen);
 
 void UpdateConstantBuffer(ID3D12Resource* inCB, void* inData, int inDataLen);
 
@@ -47,3 +47,11 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const 
                                 int inWidth, int inHeight, DXGI_FORMAT inFormat);
 
 ID3D12Device* GetD3DDevice();
+
+struct Texture2D
+{
+    ID3D12Resource* m_resource;
+    DXGI_FORMAT m_format;
+};
+
+Texture2D* LoadTexture2DFromFile(ID3D12GraphicsCommandList*inCommandList,const char* inFilePath);
