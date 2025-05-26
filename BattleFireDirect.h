@@ -14,19 +14,22 @@ D3D12_RESOURCE_BARRIER InitResourceBarrier(ID3D12Resource* inResource,
                                            D3D12_RESOURCE_STATES inNextState);
 
 ID3D12RootSignature* InitRootSignature();
-
+ID3D12RootSignature* GetRootSignature();
 void CreateShaderFromFile(LPCTSTR inShaderFilePath, const char* inMainFunctionName, const char* inTarget,
                           //vs  vs_5_1 ps  ps_5_1 版本
                           D3D12_SHADER_BYTECODE* inShader);
 
 ID3D12Resource* CreateCPUGPUBufferObject(int inDataLen);
 
-void UpdateConstantBuffer(ID3D12Resource* inCB, void* inData, int inDataLen);
+void UpdateCPUGPUBuffer(ID3D12Resource* inCB, void* inData, int inDataLen);
 
 ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
                                D3D12_SHADER_BYTECODE inVertexShader,
                                D3D12_SHADER_BYTECODE inPixelShader,
-                               D3D12_SHADER_BYTECODE inGeometryShader);
+                               D3D12_SHADER_BYTECODE inHullShader,
+                               D3D12_SHADER_BYTECODE inDomainShader,
+                               D3D12_CULL_MODE inCullMode = D3D12_CULL_MODE_BACK,
+                               bool inEnableDepthTest = true);
 
 bool InitD3D12(HWND inHWND, int inWidth, int inHeight);
 
@@ -43,8 +46,14 @@ void EndRenderToSwapChain(ID3D12GraphicsCommandList* inCommandList);
 
 void SwapD3D12Buffers();
 
+ID3D12Resource* CreateTextureObject(ID3D12GraphicsCommandList* inCommandList, int inWidth, int inHeight,
+                                    int inMipMapLevelCount,
+                                    int inDepth, DXGI_FORMAT inFormat, D3D12_RESOURCE_DIMENSION inDimension);
+
 ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const void* inPixelData, int inDataSizeInByte,
                                 int inWidth, int inHeight, DXGI_FORMAT inFormat);
+
+ID3D12Resource* CreateTextureCube(ID3D12GraphicsCommandList* inCommandList, const char** inFilePaths);
 
 ID3D12Device* GetD3DDevice();
 
@@ -54,4 +63,4 @@ struct Texture2D
     DXGI_FORMAT m_format;
 };
 
-Texture2D* LoadTexture2DFromFile(ID3D12GraphicsCommandList*inCommandList,const char* inFilePath);
+Texture2D* LoadTexture2DFromFile(ID3D12GraphicsCommandList* inCommandList, const char* inFilePath);

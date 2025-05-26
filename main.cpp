@@ -4,8 +4,6 @@
 
 #include "BattleFireDirect.h"
 #include "Scene.h"
-
-
 #include "StaticMeshComponent.h"
 
 #pragma comment(lib,"d3d12.lib")

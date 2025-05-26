@@ -20,6 +20,8 @@ ID3D12Fence* gFence = nullptr;
 HANDLE gFenceEvent = nullptr;
 UINT64 gFenceValue = 0;
 
+ID3D12RootSignature* gRootSignature = nullptr;
+
 ID3D12Resource* CreateBufferObject(ID3D12GraphicsCommandList* inCommandList, void* inData, int inDataLen,
                                    D3D12_RESOURCE_STATES inFinalResourceState)
 {
@@ -118,12 +120,18 @@ ID3D12RootSignature* InitRootSignature()
     rootParameters[1].Descriptor.RegisterSpace = 0; //descriptor占两个DWORLD
     rootParameters[1].Descriptor.ShaderRegister = 1;
 
-    D3D12_DESCRIPTOR_RANGE descriptorRange[1];
+    D3D12_DESCRIPTOR_RANGE descriptorRange[2];
     descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     descriptorRange[0].RegisterSpace = 0;
     descriptorRange[0].BaseShaderRegister = 0;
     descriptorRange[0].NumDescriptors = 1;
     descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    descriptorRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRange[1].RegisterSpace = 0;
+    descriptorRange[1].BaseShaderRegister = 1;
+    descriptorRange[1].NumDescriptors = 1;
+    descriptorRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
     rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; //2个DWORD
     rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -162,10 +170,15 @@ ID3D12RootSignature* InitRootSignature()
 
     ID3DBlob* sigature;
     HRESULT hResult = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sigature, nullptr);
-    ID3D12RootSignature* d3d12RootSignature = nullptr;
+   
     gD3D12Device->CreateRootSignature(0, sigature->GetBufferPointer(), sigature->GetBufferSize(),
-                                      IID_PPV_ARGS(&d3d12RootSignature));
-    return d3d12RootSignature;
+                                      IID_PPV_ARGS(&gRootSignature));
+    return gRootSignature;
+}
+
+ID3D12RootSignature* GetRootSignature()
+{
+    return gRootSignature;
 }
 
 void CreateShaderFromFile(
@@ -222,7 +235,7 @@ ID3D12Resource* CreateCPUGPUBufferObject(int inDataLen)
     return bufferObject;
 }
 
-void UpdateConstantBuffer(ID3D12Resource* inCB, void* inData, int inDataLen)
+void UpdateCPUGPUBuffer(ID3D12Resource* inCB, void* inData, int inDataLen)
 {
     D3D12_RANGE d3d12Range = {0};
     unsigned char* pBuffer = nullptr;
@@ -234,7 +247,10 @@ void UpdateConstantBuffer(ID3D12Resource* inCB, void* inData, int inDataLen)
 ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
                                D3D12_SHADER_BYTECODE inVertexShader,
                                D3D12_SHADER_BYTECODE inPixelShader,
-                               D3D12_SHADER_BYTECODE inGeometryShader)
+                               D3D12_SHADER_BYTECODE inHullShader,
+                               D3D12_SHADER_BYTECODE inDomainShader,
+                               D3D12_CULL_MODE inCullMode,
+                               bool inEnableDepthTest)
 {
     D3D12_INPUT_ELEMENT_DESC vertexDataElementDesc[] =
     {
@@ -272,16 +288,17 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     psoDesc.pRootSignature = inD3D12RootSignature;
     psoDesc.InputLayout = vertexDataLayoutDesc;
     psoDesc.VS = inVertexShader;
-    psoDesc.GS = inGeometryShader;
     psoDesc.PS = inPixelShader;
+    psoDesc.HS = inHullShader;
+    psoDesc.DS = inDomainShader;
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
     psoDesc.SampleMask = 0xffffffff;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID; //实心模式
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME; //实心模式
+    psoDesc.RasterizerState.CullMode = inCullMode;
     psoDesc.RasterizerState.FrontCounterClockwise = false;
     psoDesc.RasterizerState.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
     psoDesc.RasterizerState.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
@@ -293,8 +310,11 @@ ID3D12PipelineState* CreatePSO(ID3D12RootSignature* inD3D12RootSignature,
     psoDesc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
     psoDesc.BlendState.AlphaToCoverageEnable = false;
 
-    psoDesc.DepthStencilState.DepthEnable = true;
-    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; //深度可写
+
+    psoDesc.DepthStencilState.DepthEnable = inEnableDepthTest;
+    psoDesc.DepthStencilState.DepthWriteMask = inEnableDepthTest
+                                                   ? D3D12_DEPTH_WRITE_MASK_ALL
+                                                   : D3D12_DEPTH_WRITE_MASK_ZERO; //深度可写
     psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS; //绘制时可以让离眼睛更近的物体覆盖掉更远的
     psoDesc.BlendState = {0};
 
@@ -522,27 +542,9 @@ void SwapD3D12Buffers()
 ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const void* inPixelData, int inDataSizeInByte,
                                 int inWidth, int inHeight, DXGI_FORMAT inFormat)
 {
-    D3D12_HEAP_PROPERTIES d3d12HeapProps{};
-    d3d12HeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
-
-    D3D12_RESOURCE_DESC d3d12ResourceDesc{};
-    d3d12ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    d3d12ResourceDesc.Alignment = 0;
-    d3d12ResourceDesc.Width = inWidth;
-    d3d12ResourceDesc.Height = inHeight;
-    d3d12ResourceDesc.DepthOrArraySize = 1;
-    d3d12ResourceDesc.MipLevels = 1;
-    d3d12ResourceDesc.Format = inFormat;
-    d3d12ResourceDesc.SampleDesc.Count = 1;
-    d3d12ResourceDesc.SampleDesc.Quality = 0;
-    d3d12ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    d3d12ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    ID3D12Resource* texture = nullptr;
-    gD3D12Device->CreateCommittedResource(&d3d12HeapProps, D3D12_HEAP_FLAG_NONE, &d3d12ResourceDesc,
-                                          D3D12_RESOURCE_STATE_COPY_DEST, nullptr,IID_PPV_ARGS(&texture));
-
-
-    d3d12ResourceDesc = texture->GetDesc();
+    ID3D12Resource* texture = CreateTextureObject(inCommandList, inWidth, inHeight, 1, 1, inFormat,
+                                                  D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+    D3D12_RESOURCE_DESC d3d12ResourceDesc = texture->GetDesc();
     UINT64 memorySizeUsed = 0;
     UINT64 rowSizeInBytes = 0; //一行可以存储多少数据
     UINT rowUsed = 0; //多少航
@@ -550,34 +552,7 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const 
     gD3D12Device->GetCopyableFootprints(&d3d12ResourceDesc, 0, 1, 0,
                                         &subResourceFootprint, &rowUsed, &rowSizeInBytes, &memorySizeUsed);
 
-    ID3D12Resource* tempBufferObject = nullptr;
-
-    D3D12_HEAP_PROPERTIES d3d12TempHeapProps = {};
-    d3d12TempHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
-
-    D3D12_RESOURCE_DESC d3d12TempResourceDesc{};
-    d3d12TempResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    d3d12TempResourceDesc.Alignment = 0;
-    d3d12TempResourceDesc.Width = memorySizeUsed;
-    d3d12TempResourceDesc.Height = 1;
-    d3d12TempResourceDesc.DepthOrArraySize = 1;
-    d3d12TempResourceDesc.MipLevels = 1;
-    d3d12TempResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-    d3d12TempResourceDesc.SampleDesc.Count = 1;
-    d3d12TempResourceDesc.SampleDesc.Quality = 0;
-    d3d12TempResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    d3d12TempResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-
-    gD3D12Device->CreateCommittedResource(
-        &d3d12TempHeapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &d3d12TempResourceDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&tempBufferObject)
-    );
-
+    ID3D12Resource* tempBufferObject = CreateCPUGPUBufferObject((int)memorySizeUsed);
 
     BYTE* pData;
     tempBufferObject->Map(0, nullptr, reinterpret_cast<void**>(&pData));
@@ -610,6 +585,75 @@ ID3D12Resource* CreateTexture2D(ID3D12GraphicsCommandList* inCommandList, const 
     return texture;
 }
 
+ID3D12Resource* CreateTextureCube(ID3D12GraphicsCommandList* inCommandList, const char** inFilePaths)
+{
+    int imageWidth, imageHeight, imageChannel;
+    stbi_uc* imagePixels[6];
+    DXGI_FORMAT imageFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    for (int i = 0; i < 6; i++)
+    {
+        imagePixels[i] = stbi_load(inFilePaths[i], &imageWidth, &imageHeight, &imageChannel, 4);
+    }
+    ID3D12Resource* texture = CreateTextureObject(inCommandList,
+                                                  imageWidth, imageHeight, 1, 6, imageFormat,
+                                                  D3D12_RESOURCE_DIMENSION_TEXTURE2D);
+
+
+    D3D12_RESOURCE_DESC d3d12ResourceDesc = texture->GetDesc();
+    UINT64 memorySizeUsed = 0;
+    UINT64 rowSizeInBytes[6]; //一行可以存储多少数据
+    UINT rowUsed[6]; //多少航
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT subResourceFootprint[6]; //内存布局
+    gD3D12Device->GetCopyableFootprints(&d3d12ResourceDesc, 0, 6, 0,
+                                        subResourceFootprint, rowUsed, rowSizeInBytes, &memorySizeUsed);
+
+    ID3D12Resource* tempBufferObject = CreateCPUGPUBufferObject((int)memorySizeUsed);
+    BYTE* pCopyDst;
+    tempBufferObject->Map(0, nullptr, reinterpret_cast<void**>(&pCopyDst));
+    for (int i = 0; i < 6; i++)
+    {
+        BYTE* pDstTempBuffer = reinterpret_cast<BYTE*>(pCopyDst + subResourceFootprint[i].Offset);
+        const BYTE* pSrcData = reinterpret_cast<const BYTE*>(imagePixels[i]); //reinterpret_cast<BYTE*>(inData);
+        for (UINT j = 0; j < rowUsed[i]; j++)
+        {
+            int dataSizeInRow = imageWidth * 4;
+            //解释：假如我有一个48字节的数据，gpu默认每次分配都是32字节，对于一个buffer来说每一行数据是32，那么48字节的数据就会以2行每行24字节进行存储，
+            // subResourceFootprint.Footprint.RowPitch代表gpu每次分配的一行的字节数(32)，rowSizeInBytes则表示一行数据所占的字节数(24)，
+            memcpy(pDstTempBuffer + subResourceFootprint[i].Footprint.RowPitch * j, pSrcData + dataSizeInRow * j,
+                   dataSizeInRow);
+        }
+    }
+
+
+    tempBufferObject->Unmap(0, nullptr);
+    for (int i = 0; i < 6; i++)
+    {
+        D3D12_TEXTURE_COPY_LOCATION dst{};
+        dst.pResource = texture;
+        dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dst.SubresourceIndex = i;
+
+        D3D12_TEXTURE_COPY_LOCATION src = {};
+        src.pResource = tempBufferObject;
+        src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        src.PlacedFootprint = subResourceFootprint[i];
+
+        inCommandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+    }
+
+
+    D3D12_RESOURCE_BARRIER barrier = InitResourceBarrier(texture, D3D12_RESOURCE_STATE_COPY_DEST,
+                                                         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    inCommandList->ResourceBarrier(1, &barrier);
+
+    for (int i = 0; i < 6; i++)
+    {
+        delete[] imagePixels[i];
+    }
+
+    return texture;
+}
+
 ID3D12Device* GetD3DDevice()
 {
     return gD3D12Device;
@@ -627,4 +671,29 @@ Texture2D* LoadTexture2DFromFile(ID3D12GraphicsCommandList* inCommandList, const
     texture2D->m_format = DXGI_FORMAT_R8G8B8A8_UNORM;
     texture2D->m_resource = texture;
     return texture2D;
+}
+
+ID3D12Resource* CreateTextureObject(ID3D12GraphicsCommandList* inCommandList, int inWidth, int inHeight,
+                                    int inMipMapLevelCount, int inDepth, DXGI_FORMAT inFormat,
+                                    D3D12_RESOURCE_DIMENSION inDimension)
+{
+    D3D12_HEAP_PROPERTIES d3d12HeapProps{};
+    d3d12HeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_RESOURCE_DESC d3d12ResourceDesc{};
+    d3d12ResourceDesc.Dimension = inDimension;
+    d3d12ResourceDesc.Alignment = 0;
+    d3d12ResourceDesc.Width = inWidth;
+    d3d12ResourceDesc.Height = inHeight;
+    d3d12ResourceDesc.DepthOrArraySize = inDepth;
+    d3d12ResourceDesc.MipLevels = inMipMapLevelCount;
+    d3d12ResourceDesc.Format = inFormat;
+    d3d12ResourceDesc.SampleDesc.Count = 1;
+    d3d12ResourceDesc.SampleDesc.Quality = 0;
+    d3d12ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    d3d12ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    ID3D12Resource* texture = nullptr;
+    gD3D12Device->CreateCommittedResource(&d3d12HeapProps, D3D12_HEAP_FLAG_NONE, &d3d12ResourceDesc,
+                                          D3D12_RESOURCE_STATE_COPY_DEST, nullptr,IID_PPV_ARGS(&texture));
+    return texture;
 }

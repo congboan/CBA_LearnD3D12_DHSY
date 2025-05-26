@@ -19,11 +19,17 @@ void SceneNode::SetPosition(float inX, float inY, float inZ)
     m_position = DirectX::XMVectorSet(inX, inY, inZ, 1.0f);
 }
 
+void SceneNode::SetPosition(const DirectX::XMVECTOR& inPosition)
+{
+    m_bIsNeedUpdate = true;
+    m_position = inPosition;
+}
+
 void SceneNode::Render(ID3D12GraphicsCommandList* inCommandlist)
 {
     if (m_bIsNeedUpdate)
     {
-        DirectX::XMMATRIX modelMatrix = DirectX::XMMatrixTranslation(0.f, 0.f, 0.f);
+        DirectX::XMMATRIX modelMatrix = DirectX::XMMatrixTranslationFromVector(m_position);
         DirectX::XMFLOAT4X4 tempMatrix;
         //modelMatrix *= DirectX::XMMatrixRotationZ(90.f / 180.f * DirectX::XM_PI);
         float matrices[32];
@@ -41,7 +47,7 @@ void SceneNode::Render(ID3D12GraphicsCommandList* inCommandlist)
             memcpy(matrices + 16, &tempMatrix, sizeof(float) * 16);
         }
 
-        UpdateConstantBuffer(m_staticMeshComponent->m_material->m_constantBuffer, matrices, sizeof(float) * 32);
+        UpdateCPUGPUBuffer(m_staticMeshComponent->m_material->m_constantBuffer, matrices, sizeof(float) * 32);
         m_bIsNeedUpdate = false;
     }
     m_staticMeshComponent->Render(inCommandlist);

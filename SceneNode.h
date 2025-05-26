@@ -12,6 +12,8 @@ public:
 
     void SetPosition(float inX, float inY, float inZ);
 
+    void SetPosition(const DirectX::XMVECTOR& inPosition);
+
     void Render(ID3D12GraphicsCommandList* inCommandlist);
 
     bool m_bIsNeedUpdate;

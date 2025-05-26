@@ -24,19 +24,35 @@ class StaticMeshComponent
 {
 public:
     StaticMeshComponent();
-protected:
+
+public:
     ID3D12Resource* m_vbo;
     D3D12_VERTEX_BUFFER_VIEW m_vboView;
     StaticMeshComponentVertexData* m_vertexData;
     bool m_bRenderWithSubMesh;
-    
+
     D3D_PRIMITIVE_TOPOLOGY m_PrimitiveType;
+
     int m_vertexCount;
     std::unordered_map<std::string, SubMesh*> m_subMeshes;
+
 public:
     void InitFromFile(ID3D12GraphicsCommandList* inCommandList, const char* inFilePath);
     void Render(ID3D12GraphicsCommandList* inCommandList);
     void SetPrimitive(D3D_PRIMITIVE_TOPOLOGY inPrimitiveType);
     void SetIsRenderWithSubMesh(bool inIsRenderWithSubMesh);
+
+    void SetVertexCount(int inVertexCount);
+    void SetVertexPosition(int inIndex, float inX, float inY, float inZ, float inW = 1.0f);
+    void SetVertexTexcoord(int inIndex, float inX, float inY, float inZ, float inW = 1.0f);
+    void SetVertexNormal(int inIndex, float inX, float inY, float inZ, float inW = 1.0f);
+    void SetVertexTangent(int inIndex, float inX, float inY, float inZ, float inW = 1.0f);
     Material* m_material = nullptr;
+    int m_instanceCount;
+};
+
+class FullScreenTriangle : public StaticMeshComponent
+{
+public:
+    void Init(ID3D12GraphicsCommandList* inCommandList);
 };

@@ -7,7 +7,8 @@
 StaticMeshComponent::StaticMeshComponent(): m_bRenderWithSubMesh(true),
                                             m_PrimitiveType(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST),
                                             m_vertexCount(0),
-                                            m_material(nullptr)
+                                            m_material(nullptr),
+                                            m_instanceCount(1)
 {
 }
 
@@ -76,14 +77,14 @@ void StaticMeshComponent::Render(ID3D12GraphicsCommandList* inCommandList)
                  iter++)
             {
                 inCommandList->IASetIndexBuffer(&iter->second->m_ibView);
-                inCommandList->DrawIndexedInstanced(iter->second->m_indexCount, 1, 0, 0, 0);
+                inCommandList->DrawIndexedInstanced(iter->second->m_indexCount, m_instanceCount, 0, 0, 0);
             }
             return;
         }
     }
 
 
-    inCommandList->DrawInstanced(m_vertexCount, 1, 0, 0);
+    inCommandList->DrawInstanced(m_vertexCount, m_instanceCount, 0, 0);
 }
 
 void StaticMeshComponent::SetPrimitive(D3D_PRIMITIVE_TOPOLOGY inPrimitiveType)
@@ -94,4 +95,65 @@ void StaticMeshComponent::SetPrimitive(D3D_PRIMITIVE_TOPOLOGY inPrimitiveType)
 void StaticMeshComponent::SetIsRenderWithSubMesh(bool inIsRenderWithSubMesh)
 {
     m_bRenderWithSubMesh = inIsRenderWithSubMesh;
+}
+
+void StaticMeshComponent::SetVertexCount(int inVertexCount)
+{
+    m_vertexCount = inVertexCount;
+    m_vertexData = new StaticMeshComponentVertexData[inVertexCount];
+    memset(m_vertexData, 0, sizeof(StaticMeshComponentVertexData)*inVertexCount);
+}
+
+void StaticMeshComponent::SetVertexPosition(int inIndex, float inX, float inY, float inZ, float inW)
+{
+    m_vertexData[inIndex].m_position[0] = inX;
+    m_vertexData[inIndex].m_position[1] = inY;
+    m_vertexData[inIndex].m_position[2] = inZ;
+    m_vertexData[inIndex].m_position[3] = inW;
+}
+
+void StaticMeshComponent::SetVertexTexcoord(int inIndex, float inX, float inY, float inZ, float inW)
+{
+    m_vertexData[inIndex].m_texcoord[0] = inX;
+    m_vertexData[inIndex].m_texcoord[1] = inY;
+    m_vertexData[inIndex].m_texcoord[2] = inZ;
+    m_vertexData[inIndex].m_texcoord[3] = inW;
+}
+
+void StaticMeshComponent::SetVertexNormal(int inIndex, float inX, float inY, float inZ, float inW)
+{
+    m_vertexData[inIndex].m_normal[0] = inX;
+    m_vertexData[inIndex].m_normal[1] = inY;
+    m_vertexData[inIndex].m_normal[2] = inZ;
+    m_vertexData[inIndex].m_normal[3] = inW;
+}
+
+void StaticMeshComponent::SetVertexTangent(int inIndex, float inX, float inY, float inZ, float inW)
+{
+    m_vertexData[inIndex].m_tangent[0] = inX;
+    m_vertexData[inIndex].m_tangent[1] = inY;
+    m_vertexData[inIndex].m_tangent[2] = inZ;
+    m_vertexData[inIndex].m_tangent[3] = inW;
+}
+
+void FullScreenTriangle::Init(ID3D12GraphicsCommandList* inCommandList)
+{
+    m_vertexCount = 3;
+    m_vertexData = new StaticMeshComponentVertexData[m_vertexCount];
+    
+    SetVertexPosition(0, -3.0f, -1.0f, 0.5f, 1.0f);
+    SetVertexTexcoord(0, -1.0f, 1.0f, 0.5f, 1.0f);
+    SetVertexPosition(1, 1.0f, 3.0f, 0.5f, 1.0f);
+    SetVertexTexcoord(1, 1.0f, -1.0f, 0.5f, 1.0f);
+    SetVertexPosition(2, 1.0f, -1.0f, 0.5f, 1.0f);
+    SetVertexTexcoord(2, 1.0f, 1.0f, 0.5f, 1.0f);
+    
+
+    m_vbo = CreateBufferObject(inCommandList, m_vertexData,
+                               m_vertexCount * sizeof(StaticMeshComponentVertexData),
+                               D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+    m_vboView.BufferLocation = m_vbo->GetGPUVirtualAddress();
+    m_vboView.SizeInBytes = sizeof(StaticMeshComponentVertexData) * m_vertexCount;
+    m_vboView.StrideInBytes = sizeof(StaticMeshComponentVertexData);
 }
